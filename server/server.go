@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"my-im/user"
 	"net"
@@ -11,7 +12,7 @@ import (
 type Server struct {
 	IP string
 	Port int
-
+	u *user.User
 	OnlineMap map[string]*user.User
 	Message chan string
 	mu sync.RWMutex
@@ -36,6 +37,7 @@ func(s *Server) Start(){
 	if  err != nil{
 		log.Fatal()
 	}
+
 	// 启动监听message的go
 	go s.ListenMessager()
 
@@ -67,12 +69,35 @@ func(s *Server) Handler(conn net.Conn) {
 	s.mu.Unlock()
 	// 广播当前用户上线消息
 	s.BoradCast(u, "已上线")
+
+	// 将用户输入消息也进行广播
+	err := s.sendAll(u, conn)
+	if err !=nil{
+		fmt.Println("there is have an error!!!")
+		fmt.Println(err)
+		return
+	}
 }
 
 // 广播消息
 func(s *Server)BoradCast(u *user.User, msg string){
 	sendMsg := fmt.Sprintf("[%s]%s: %s", u.Addr, u.Name, msg)
 	s.Message <- sendMsg
+}
+
+
+// 向在线用户发送消息
+func (s *Server)sendAll(currUser *user.User, conn net.Conn) (error error) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil && err != io.EOF{
+			return err
+		}
+		msg := "user"+currUser.Name+ "发送了消息: " + string(buf[:n-1])
+		s.BoradCast(currUser, msg)
+	}
+
 }
 
 // 监听Message广播消息channnel的goroutine,一旦有消息就发送给全部在线的user
