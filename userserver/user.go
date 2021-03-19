@@ -2,7 +2,6 @@ package userserver
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"strings"
 )
@@ -65,57 +64,46 @@ func (u *User)sendMsg(msg string){
 	}
 }
 
+func(u *User)rename(newname string){
+	if u.server.OnlineMap[newname] != nil{
+		u.sendMsg(fmt.Sprintf("[%s]此名称已经被占用了~，换个名字吧", newname))
+		return
+	}
+	u.server.Mu.Lock()
+	// 需要先删除原有的key
+	delete(u.server.OnlineMap, u.Name)
+	u.server.OnlineMap[newname] = u
+	u.Name = newname
+	u.sendMsg("昵称修改成功")
+	u.server.Mu.Unlock()
+}
+
+
+func(u *User)who(){
+	for _, cli := range u.server.OnlineMap{
+		currMsg := fmt.Sprintf("当前[%s]在线", cli.Name)
+		u.sendMsg(currMsg)
+	}
+}
+
 // 用户消息处理
-func(u *User)DoMessage() error{
-	buf := make([]byte, 1024)
-	for {
-		n, err := u.conn.Read(buf)
-		if err != nil && err != io.EOF{
-			return err
-		}
-		if n == 1{
-			u.sendMsg(fmt.Sprintf("[%s]$:", u.Name))
-			continue
-		}
-
-		if n > 1{
-		msg := string(buf[:n-1])
-		if msg == "h" || msg == "help"{
-			u.sendMsg("获取技能: \n who: 查看当前在线用户\n rename: 重命名你当前的用户\n\tusage rename|zhangsan")
-			continue
-		}
-		if msg == "who"{
-			for _, cli := range u.server.OnlineMap{
-				currMsg := fmt.Sprintf("当前[%s]在线", cli.Name)
-				u.sendMsg(currMsg)
-			}
-			continue
-		}
-
-		if msg=="rename"{
-			u.sendMsg("rename usage: username|<your name>\n")
-			continue
-		}
-		if strings.Contains(msg, "rename|"){
+func(u *User)DoMessage(msg string) error {
+	u.server.isalive <- struct{}{}
+	switch msg {
+	case "help":
+		u.sendMsg("获取技能: \n who: 查看当前在线用户\n rename: 重命名你当前的用户\n\tusage rename|zhangsan")
+	case "who":
+		u.who()
+	case "rename":
+		u.sendMsg("rename usage: username|<your name>\n")
+	default:
+		if strings.Contains(msg, "rename|") {
 			newname := strings.Split(msg, "|")[1]
-			if u.server.OnlineMap[newname] != nil{
-				u.sendMsg(fmt.Sprintf("[%s]此名称已经被占用了~，换个名字吧", newname))
-				continue
-			}
-			u.server.OnlineMap[newname] = u
-			u.Name = newname
-			u.sendMsg("昵称修改成功")
-			continue
+			u.rename(newname)
+			return nil
 		}
 		boradcastMsg := "发送了消息: " + msg
 		u.server.BoradCast(u, boradcastMsg)
-		}
-
-		if n == 0{ // 当read是0 的时候就说明已经下线
-			u.OfflineNotice()
-			return nil
-		}
 	}
-
-
+	return nil
 }
