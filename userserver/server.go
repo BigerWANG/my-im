@@ -1,10 +1,8 @@
-package server
+package userserver
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"my-im/user"
 	"net"
 	"sync"
 )
@@ -12,10 +10,10 @@ import (
 type Server struct {
 	IP string
 	Port int
-	u *user.User
-	OnlineMap map[string]*user.User
+	u *User
+	OnlineMap map[string]*User
 	Message chan string
-	mu sync.RWMutex
+	Mu sync.RWMutex
 }
 
 
@@ -24,7 +22,7 @@ func NewServer(ip string, port int) *Server {
 	return  &Server{
 		IP:   ip,
 		Port: port,
-		OnlineMap: make(map[string]*user.User),
+		OnlineMap: make(map[string]*User),
 		Message: make(chan string),
 
 	}
@@ -37,10 +35,8 @@ func(s *Server) Start(){
 	if  err != nil{
 		log.Fatal()
 	}
-
 	// 启动监听message的go
 	go s.ListenMessager()
-
 
 	defer func() {
 		err = listener.Close()
@@ -60,18 +56,12 @@ func(s *Server) Start(){
 }
 
 func(s *Server) Handler(conn net.Conn) {
-	u := user.NewUser(conn)
+	u := NewUser(conn, s)
 	// 启动用户监听程序
 	go u.ListenMessage()
-	s.mu.Lock()
-	// 将当前用户保存在map中
-	s.OnlineMap[u.Name]=u
-	s.mu.Unlock()
-	// 广播当前用户上线消息
-	s.BoradCast(u, "已上线")
-
 	// 将用户输入消息也进行广播
-	err := s.sendAll(u, conn)
+	u.OnlineNotice()
+	err := u.DoMessage()
 	if err !=nil{
 		fmt.Println("there is have an error!!!")
 		fmt.Println(err)
@@ -80,36 +70,21 @@ func(s *Server) Handler(conn net.Conn) {
 }
 
 // 广播消息
-func(s *Server)BoradCast(u *user.User, msg string){
+func(s *Server)BoradCast(u *User, msg string){
 	sendMsg := fmt.Sprintf("[%s]%s: %s", u.Addr, u.Name, msg)
 	s.Message <- sendMsg
 }
 
 
-// 向在线用户发送消息
-func (s *Server)sendAll(currUser *user.User, conn net.Conn) (error error) {
-	buf := make([]byte, 1024)
-	for {
-		n, err := conn.Read(buf)
-		if err != nil && err != io.EOF{
-			return err
-		}
-		msg := "user"+currUser.Name+ "发送了消息: " + string(buf[:n-1])
-		s.BoradCast(currUser, msg)
-	}
-
-}
-
 // 监听Message广播消息channnel的goroutine,一旦有消息就发送给全部在线的user
 func (s *Server)ListenMessager()  {
 	for {
 		msg := <- s.Message
-
-		s.mu.Lock()
+		s.Mu.Lock()
 		for _, cli := range s.OnlineMap{
+			fmt.Println("当前用户", cli.Name, msg)
 			cli.UserChan <- msg
 		}
-		s.mu.Unlock()
+		s.Mu.Unlock()
 	}
-	
 }
