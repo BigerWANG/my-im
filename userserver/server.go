@@ -71,7 +71,7 @@ func(s *Server) Handler(conn net.Conn) {
 
 // 广播消息
 func(s *Server)BoradCast(u *User, msg string){
-	sendMsg := fmt.Sprintf("[%s]%s: %s", u.Addr, u.Name, msg)
+	sendMsg := fmt.Sprintf("[%s]: %s", u.Name, msg)
 	s.Message <- sendMsg
 }
 
@@ -82,7 +82,6 @@ func (s *Server)ListenMessager()  {
 		msg := <- s.Message
 		s.Mu.Lock()
 		for _, cli := range s.OnlineMap{
-			fmt.Println("当前用户", cli.Name, msg)
 			cli.UserChan <- msg
 		}
 		s.Mu.Unlock()
